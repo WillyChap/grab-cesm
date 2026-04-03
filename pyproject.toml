@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "grab-cesm"
+version = "0.1.0"
+description = "Lightweight accessor for CESM2 Large Ensemble data on the NCAR AWS S3 archive"
+requires-python = ">=3.10"
+dependencies = [
+    "xarray>=2022.6",
+    "zarr",
+    "s3fs",
+    "numpy",
+]
+
+[project.optional-dependencies]
+plot = ["matplotlib"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
