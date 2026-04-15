@@ -154,6 +154,31 @@ def list_variables(
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+def _sel_lon(da: xr.DataArray, lo_raw: float, hi_raw: float, dim: str) -> xr.DataArray:
+    """Select a longitude range on a 0–360 grid, handling wraparound correctly.
+
+    Cases
+    -----
+    - span >= 360°  : global — return da unchanged
+    - lo <= hi      : normal slice, e.g. -135→-60 becomes 225→300
+    - lo > hi       : range crosses the prime meridian, e.g. -179→179 becomes
+                      181→179; concat [181,360) + [0,179]
+    """
+    if abs(hi_raw - lo_raw) >= 360.0:
+        return da
+
+    lo = lo_raw % 360
+    hi = hi_raw % 360
+
+    if lo <= hi:
+        return da.sel({dim: slice(lo, hi)})
+
+    # Wraparound: e.g. lo=181, hi=179 → [181,360) ∪ [0,179]
+    part1 = da.sel({dim: slice(lo, None)})
+    part2 = da.sel({dim: slice(None, hi)})
+    return xr.concat([part1, part2], dim=dim)
+
+
 def _sel_atm(da: xr.DataArray, lat, lon) -> xr.DataArray:
     """Subset an atmosphere DataArray on its regular lat/lon grid.
 
@@ -175,18 +200,9 @@ def _sel_atm(da: xr.DataArray, lat, lon) -> xr.DataArray:
         elif isinstance(lon, slice):
             lo_raw = float(lon.start) if lon.start is not None else -180.0
             hi_raw = float(lon.stop) if lon.stop is not None else 180.0
-            if abs(hi_raw - lo_raw) < 360.0:
-                lo = lo_raw % 360
-                hi = hi_raw % 360
-                da = da.sel(lon=slice(min(lo, hi), max(lo, hi)))
-            # else: global span, skip subsetting
+            da = _sel_lon(da, lo_raw, hi_raw, dim="lon")
         else:
-            lo_raw, hi_raw = float(lon[0]), float(lon[1])
-            if abs(hi_raw - lo_raw) < 360.0:
-                lo = lo_raw % 360
-                hi = hi_raw % 360
-                da = da.sel(lon=slice(min(lo, hi), max(lo, hi)))
-            # else: global span, skip subsetting
+            da = _sel_lon(da, float(lon[0]), float(lon[1]), dim="lon")
     return da
 
 
@@ -221,13 +237,16 @@ def _sel_ocn(da: xr.DataArray, ds: xr.Dataset, lat, lon) -> xr.DataArray:
         lat_min, lat_max = sorted(float(v) for v in lat)
         lo_raw, hi_raw = float(lon[0]), float(lon[1])
         if abs(hi_raw - lo_raw) >= 360.0:
-            lon_min, lon_max = 0.0, 360.0  # global — keep all longitudes
+            lon_mask = xr.ones_like(tlong, dtype=bool)  # global — keep all
         else:
-            lon_min, lon_max = sorted(float(v) % 360 for v in lon)
-        mask = (
-            (tlat >= lat_min) & (tlat <= lat_max)
-            & (tlong >= lon_min) & (tlong <= lon_max)
-        )
+            lo = lo_raw % 360
+            hi = hi_raw % 360
+            if lo <= hi:
+                lon_mask = (tlong >= lo) & (tlong <= hi)
+            else:
+                # Wraparound: [lo,360) ∪ [0,hi]
+                lon_mask = (tlong >= lo) | (tlong <= hi)
+        mask = (tlat >= lat_min) & (tlat <= lat_max) & lon_mask
         rows = np.where(mask.any(dim="nlon").values)[0]
         cols = np.where(mask.any(dim="nlat").values)[0]
         if rows.size and cols.size:
