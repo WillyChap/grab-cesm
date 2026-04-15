@@ -173,12 +173,20 @@ def _sel_atm(da: xr.DataArray, lat, lon) -> xr.DataArray:
         if np.isscalar(lon):
             da = da.sel(lon=float(lon) % 360, method="nearest")
         elif isinstance(lon, slice):
-            start = float(lon.start) % 360 if lon.start is not None else None
-            stop = float(lon.stop) % 360 if lon.stop is not None else None
-            da = da.sel(lon=slice(start, stop))
+            lo_raw = float(lon.start) if lon.start is not None else -180.0
+            hi_raw = float(lon.stop) if lon.stop is not None else 180.0
+            if abs(hi_raw - lo_raw) < 360.0:
+                lo = lo_raw % 360
+                hi = hi_raw % 360
+                da = da.sel(lon=slice(min(lo, hi), max(lo, hi)))
+            # else: global span, skip subsetting
         else:
-            lon = tuple(float(v) % 360 for v in lon)
-            da = da.sel(lon=slice(min(lon), max(lon)))
+            lo_raw, hi_raw = float(lon[0]), float(lon[1])
+            if abs(hi_raw - lo_raw) < 360.0:
+                lo = lo_raw % 360
+                hi = hi_raw % 360
+                da = da.sel(lon=slice(min(lo, hi), max(lo, hi)))
+            # else: global span, skip subsetting
     return da
 
 
@@ -211,7 +219,11 @@ def _sel_ocn(da: xr.DataArray, ds: xr.Dataset, lat, lon) -> xr.DataArray:
 
     if lat is not None and lon is not None:
         lat_min, lat_max = sorted(float(v) for v in lat)
-        lon_min, lon_max = sorted(float(v) % 360 for v in lon)
+        lo_raw, hi_raw = float(lon[0]), float(lon[1])
+        if abs(hi_raw - lo_raw) >= 360.0:
+            lon_min, lon_max = 0.0, 360.0  # global — keep all longitudes
+        else:
+            lon_min, lon_max = sorted(float(v) % 360 for v in lon)
         mask = (
             (tlat >= lat_min) & (tlat <= lat_max)
             & (tlong >= lon_min) & (tlong <= lon_max)
