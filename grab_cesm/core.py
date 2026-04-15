@@ -154,6 +154,16 @@ def list_variables(
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+def _to_360(v: float) -> float:
+    """Normalize a longitude to 0–360 range.
+
+    Negative values (°W) are shifted by +360.  Positive values — including
+    360 itself — are left unchanged so that ``lon=360`` stays as 360
+    rather than collapsing to 0 via ``360 % 360``.
+    """
+    return v + 360 if v < 0 else v
+
+
 def _sel_lon(da: xr.DataArray, lo_raw: float, hi_raw: float, dim: str) -> xr.DataArray:
     """Select a longitude range on a 0–360 grid, handling wraparound correctly.
 
@@ -167,8 +177,8 @@ def _sel_lon(da: xr.DataArray, lo_raw: float, hi_raw: float, dim: str) -> xr.Dat
     if abs(hi_raw - lo_raw) >= 360.0:
         return da
 
-    lo = lo_raw % 360
-    hi = hi_raw % 360
+    lo = _to_360(lo_raw)
+    hi = _to_360(hi_raw)
 
     if lo <= hi:
         return da.sel({dim: slice(lo, hi)})
@@ -196,7 +206,7 @@ def _sel_atm(da: xr.DataArray, lat, lon) -> xr.DataArray:
             da = da.sel(lat=slice(min(lat), max(lat)))
     if lon is not None:
         if np.isscalar(lon):
-            da = da.sel(lon=float(lon) % 360, method="nearest")
+            da = da.sel(lon=_to_360(float(lon)), method="nearest")
         elif isinstance(lon, slice):
             lo_raw = float(lon.start) if lon.start is not None else -180.0
             hi_raw = float(lon.stop) if lon.stop is not None else 180.0
@@ -227,7 +237,7 @@ def _sel_ocn(da: xr.DataArray, ds: xr.Dataset, lat, lon) -> xr.DataArray:
         lon = (lon.start, lon.stop)
 
     if np.isscalar(lat) and np.isscalar(lon):
-        lon_norm = float(lon) % 360
+        lon_norm = _to_360(float(lon))
         dist = (tlat - float(lat)) ** 2 + (tlong - lon_norm) ** 2
         flat_idx = int(dist.values.argmin())
         j, i = np.unravel_index(flat_idx, tlat.shape)
@@ -239,8 +249,8 @@ def _sel_ocn(da: xr.DataArray, ds: xr.Dataset, lat, lon) -> xr.DataArray:
         if abs(hi_raw - lo_raw) >= 360.0:
             lon_mask = xr.ones_like(tlong, dtype=bool)  # global — keep all
         else:
-            lo = lo_raw % 360
-            hi = hi_raw % 360
+            lo = _to_360(lo_raw)
+            hi = _to_360(hi_raw)
             if lo <= hi:
                 lon_mask = (tlong >= lo) & (tlong <= hi)
             else:
