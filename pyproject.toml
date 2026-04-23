@@ -10,10 +10,13 @@ requires-python = ">=3.10"
 dependencies = [
     "xarray>=2022.6",
     "zarr",
-    "s3fs",
+    "s3fs>=2026.3.0",
     "numpy",
 ]
 
 [project.optional-dependencies]
-plot = ["matplotlib"]
+plot = [
+    "matplotlib",
+    "nc-time-axis",
+]
 
